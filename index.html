@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="bn">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>আমার খাতা</title>
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icon-192.png" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <meta name="theme-color" content="#7A2E2E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+Bengali:wght@500;700&family=Hind+Siliguri:wght@400;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>
+    body { margin: 0; font-family: 'Hind Siliguri', sans-serif; }
+    .khata-display { font-family: 'Noto Serif Bengali', serif; }
+    .ruled-bg { background-image: repeating-linear-gradient(to bottom, transparent 0px, transparent 43px, #D9CBAE 43px, #D9CBAE 44px); }
+    .margin-rule { border-left: 2px solid #B33A3A; }
+    .stitch { background-image: repeating-linear-gradient(-55deg, rgba(243,233,210,0.45) 0px, rgba(243,233,210,0.45) 2px, transparent 2px, transparent 9px); }
+    .seal-btn { box-shadow: 0 0 0 3px #EFE6D3, 0 0 0 6px #7A2E2E, 0 8px 18px rgba(0,0,0,0.35); background: radial-gradient(circle at 35% 30%, #9c4444, #6b2323 70%); transition: box-shadow 0.2s ease, opacity 0.2s ease; }
+    .seal-btn.recording { animation: pulse-seal 1.3s ease-in-out infinite; }
+    .seal-btn:disabled { opacity: 0.6; }
+    @keyframes pulse-seal { 0%, 100% { box-shadow: 0 0 0 3px #EFE6D3, 0 0 0 6px #7A2E2E, 0 8px 18px rgba(0,0,0,0.35); } 50% { box-shadow: 0 0 0 3px #EFE6D3, 0 0 0 10px #B33A3A, 0 10px 24px rgba(0,0,0,0.4); } }
+    .ribbon { clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%); }
+    .fade-in { animation: fadeIn 0.35s ease; }
+    @keyframes fadeIn { from { opacity:0; transform: translateY(-4px);} to { opacity:1; transform: translateY(0);} }
+    .flash-row { animation: flashRow 1.6s ease; }
+    @keyframes flashRow { 0% { background-color: #E9D9A8; } 100% { background-color: transparent; } }
+    .chip { border: 1px solid #D9CBAE; transition: transform 0.15s ease; }
+    .chip:active { transform: scale(0.96); }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useRef } = React;
+
+    // ================================================================
+    // এখানে তোমার Render ব্যাকএন্ড লিংক বসাও (ডেপ্লয় হওয়ার পর)
+    // যেমনঃ "https://bangla-khata-backend.onrender.com/api"
+    // এটা না বসালে ভয়েস/AI পার্সিং কাজ করবে না, তবে দ্রুত ম্যানুয়াল এন্ট্রি ঠিকই কাজ করবে
+    // ================================================================
+    const API_URL = "http://localhost:5000/api";
+
+    const BN_DIGITS = ["০", "১", "২", "৩", "৪", "৫", "৬", "৭", "৮", "৯"];
+    function bn(input) {
+      return String(input).replace(/[0-9]/g, (d) => BN_DIGITS[d]);
+    }
+
+    function formatTaka(num) {
+      const rounded = Math.round(Number(num) || 0);
+      const sign = rounded < 0 ? "-" : "";
+      const abs = Math.abs(rounded).toLocaleString("en-US");
+      return sign + "৳" + bn(abs);
+    }
+
+    function todayKey(d = new Date()) {
+      return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    }
+
+    const BN_MONTHS = ["জানুয়ারি", "ফেব্রুয়ারি", "মার্চ", "এপ্রিল", "মে", "জুন", "জুলাই", "আগস্ট", "সেপ্টেম্বর", "অক্টোবর", "নভেম্বর", "ডিসেম্বর"];
+    function banglaDateLabel(d = new Date()) {
+      return `${bn(d.getDate())} ${BN_MONTHS[d.getMonth()]}, ${bn(d.getFullYear())}`;
+    }
+
+    function partOfDayBangla(h24) {
+      if (h24 < 6) return "রাত";
+      if (h24 < 12) return "সকাল";
+      if (h24 < 16) return "দুপুর";
+      if (h24 < 18) return "বিকাল";
+      if (h24 < 20) return "সন্ধ্যা";
+      return "রাত";
+    }
+
+    function timeLabel(ts) {
+      const d = new Date(ts);
+      const h24 = d.getHours();
+      const m = d.getMinutes();
+      let h12 = h24 % 12;
+      if (h12 === 0) h12 = 12;
+      const mm = String(m).padStart(2, "0");
+      return `${partOfDayBangla(h24)} ${bn(h12)}:${bn(mm)}`;
+    }
+
+    function dateGroupLabel(ts) {
+      const d = new Date(ts);
+      const now = new Date();
+      const yesterday = new Date(now);
+      yesterday.setDate(now.getDate() - 1);
+      if (todayKey(d) === todayKey(now)) return "আজ";
+      if (todayKey(d) === todayKey(yesterday)) return "গতকাল";
+      return banglaDateLabel(d);
+    }
+
+    function typeLabelBangla(type) {
+      switch (type) {
+        case "sale": return "বিক্রি";
+        case "expense": return "খরচ";
+        case "due": return "বাকি";
+        case "payment_received": return "বাকি শোধ";
+        default: return type;
+      }
+    }
+
+    function typeColor(type) {
+      switch (type) {
+        case "sale": return "#3D7A5C";
+        case "expense": return "#B33A3A";
+        case "due": return "#A8843C";
+        case "payment_received": return "#3D7A5C";
+        default: return "#232A4D";
+      }
+    }
+
+    const QUICK_TYPES = [
+      { type: "sale", label: "বিক্রি" },
+      { type: "expense", label: "খরচ" },
+      { type: "due", label: "বাকি" },
+      { type: "payment_received", label: "বাকি শোধ" },
+    ];
+
+    function loadEntries() {
+      try {
+        const raw = localStorage.getItem("ledger-entries");
+        return raw ? JSON.parse(raw) : [];
+      } catch (e) {
+        return [];
+      }
+    }
+    function saveEntries(next) {
+      try {
+        localStorage.setItem("ledger-entries", JSON.stringify(next));
+      } catch (e) {}
+    }
+
+    async function apiParse(text) {
+      const res = await fetch(`${API_URL}/parse`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) throw new Error("parse failed");
+      return res.json();
+    }
+
+    function App() {
+      const [entries, setEntries] = useState([]);
+      const [loaded, setLoaded] = useState(false);
+      const [manualText, setManualText] = useState("");
+      const [isRecording, setIsRecording] = useState(false);
+      const [micSupported, setMicSupported] = useState(true);
+      const [parsing, setParsing] = useState(false);
+      const [toast, setToast] = useState(null);
+      const [flashId, setFlashId] = useState(null);
+      const [quickForm, setQuickForm] = useState(null);
+      const [editDraft, setEditDraft] = useState(null);
+      const [reportModal, setReportModal] = useState(null);
+      const recognitionRef = useRef(null);
+      const busyRef = useRef(false);
+      const toastTimerRef = useRef(null);
+      const reportTextRef = useRef(null);
+
+      useEffect(() => {
+        setEntries(loadEntries());
+        setLoaded(true);
+      }, []);
+
+      function showToast(msg, kind) {
+        setToast({ msg, kind });
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = setTimeout(() => setToast(null), 1800);
+      }
+
+      function commitEntry(entry) {
+        setEntries((prev) => {
+          const next = [entry, ...prev];
+          saveEntries(next);
+          return next;
+        });
+        setFlashId(entry.id);
+        setTimeout(() => setFlashId(null), 1600);
+      }
+
+      function deleteEntry(id) {
+        setEntries((prev) => {
+          const next = prev.filter((e) => e.id !== id);
+          saveEntries(next);
+          return next;
+        });
+      }
+
+      function startEdit(entry) {
+        setEditDraft({ ...entry, amount: String(entry.amount), party: entry.party || "", note: entry.note || "" });
+      }
+
+      function saveEdit() {
+        if (!editDraft) return;
+        const amt = Number(editDraft.amount) || 0;
+        setEntries((prev) => {
+          const next = prev.map((e) =>
+            e.id === editDraft.id
+              ? { ...e, type: editDraft.type, amount: amt, party: editDraft.party.trim() || null, note: editDraft.note.trim() }
+              : e
+          );
+          saveEntries(next);
+          return next;
+        });
+        setEditDraft(null);
+        showToast("✓ সংশোধন হয়েছে", "success");
+      }
+
+      async function handleAdd(text) {
+        const trimmed = (text || "").trim();
+        if (!trimmed || busyRef.current) return;
+        busyRef.current = true;
+        setParsing(true);
+        try {
+          const parsed = await apiParse(trimmed);
+          const entry = {
+            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+            ts: Date.now(),
+            type: ["sale", "expense", "due", "payment_received"].includes(parsed.type) ? parsed.type : "sale",
+            amount: Number(parsed.amount) || 0,
+            party: parsed.party || null,
+            note: parsed.note || "",
+          };
+          commitEntry(entry);
+          showToast("✓ যোগ হয়েছে", "success");
+          setManualText("");
+        } catch (e) {
+          showToast("বুঝতে পারিনি — ব্যাকএন্ড লিংক ঠিক আছে কিনা দেখো, অথবা দ্রুত এন্ট্রি ব্যবহার করো", "error");
+        } finally {
+          busyRef.current = false;
+          setParsing(false);
+        }
+      }
+
+      useEffect(() => {
+        const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SR) {
+          setMicSupported(false);
+          return;
+        }
+        const rec = new SR();
+        rec.lang = "bn-BD";
+        rec.interimResults = false;
+        rec.maxAlternatives = 1;
+        rec.onresult = (e) => {
+          const text = e.results[0][0].transcript;
+          handleAdd(text);
+        };
+        rec.onerror = (e) => {
+          setIsRecording(false);
+          if (e && (e.error === "not-allowed" || e.error === "service-not-allowed")) {
+            showToast("মাইক পারমিশন দাওনি — ব্রাউজার সেটিংসে অনুমতি দাও", "error");
+          } else {
+            showToast("মাইক থেকে বোঝা গেল না, আবার বলো বা লিখে দাও", "error");
+          }
+        };
+        rec.onend = () => setIsRecording(false);
+        recognitionRef.current = rec;
+      }, []);
+
+      function startRecording() {
+        if (isRecording || busyRef.current) return;
+        if (!recognitionRef.current) {
+          showToast("এই ব্রাউজারে ভয়েস সমর্থিত না, নিচে লিখে দাও", "error");
+          return;
+        }
+        try {
+          recognitionRef.current.start();
+          setIsRecording(true);
+        } catch (e) {
+          showToast("মাইক চালু করা গেল না — নিচে লিখে বা দ্রুত এন্ট্রি দিয়ে যোগ করো", "error");
+        }
+      }
+
+      function submitQuickForm() {
+        if (!quickForm) return;
+        const amt = Number(quickForm.amount) || 0;
+        if (amt <= 0) {
+          showToast("টাকার পরিমাণ লেখো", "error");
+          return;
+        }
+        commitEntry({
+          id: Date.now().toString(36) + Math.random().toString(36).slice(2, 7),
+          ts: Date.now(),
+          type: quickForm.type,
+          amount: amt,
+          party: quickForm.party.trim() || null,
+          note: "",
+        });
+        showToast("✓ যোগ হয়েছে", "success");
+        setQuickForm(null);
+      }
+
+      function shareReport() {
+        const duesLines = duesList.map(([name, amt]) => `${name}: ${formatTaka(amt)}`).join("\n");
+        const text =
+          `আমার খাতা — ${banglaDateLabel()}\n` +
+          `বিক্রি: ${formatTaka(saleTotal)}\n` +
+          `খরচ: ${formatTaka(expenseTotal)}\n` +
+          `নিট: ${formatTaka(saleTotal - expenseTotal)}\n` +
+          `মোট বাকি: ${formatTaka(totalDuesAll)}` +
+          (duesLines ? `\n\nবাকির তালিকা:\n${duesLines}` : "");
+        if (navigator.share) {
+          navigator.share({ title: "আজকের হিসাব", text }).catch(() => setReportModal(text));
+        } else {
+          setReportModal(text);
+        }
+      }
+
+      function copyReportText() {
+        try {
+          if (reportTextRef.current) {
+            reportTextRef.current.focus();
+            reportTextRef.current.select();
+            const ok = document.execCommand && document.execCommand("copy");
+            if (ok) {
+              showToast("✓ কপি হয়েছে", "success");
+              return;
+            }
+          }
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(reportModal).then(() => showToast("✓ কপি হয়েছে", "success"));
+            return;
+          }
+        } catch (e) {}
+        showToast("টেক্সটটা চেপে ধরে নিজে সিলেক্ট করে কপি করো", "error");
+      }
+
+      const today = todayKey();
+      const todaysEntries = entries.filter((e) => todayKey(new Date(e.ts)) === today);
+      const saleTotal = todaysEntries.filter((e) => e.type === "sale").reduce((s, e) => s + e.amount, 0);
+      const expenseTotal = todaysEntries.filter((e) => e.type === "expense").reduce((s, e) => s + e.amount, 0);
+
+      const duesMap = {};
+      entries.forEach((e) => {
+        if (e.type !== "due" && e.type !== "payment_received") return;
+        const key = e.party && e.party.trim() ? e.party.trim() : "নাম উল্লেখ নেই";
+        duesMap[key] = (duesMap[key] || 0) + (e.type === "due" ? e.amount : -e.amount);
+      });
+      const duesList = Object.entries(duesMap).filter(([, v]) => v > 0.5).sort((a, b) => b[1] - a[1]);
+      const totalDuesAll = duesList.reduce((s, [, v]) => s + v, 0);
+
+      const grouped = [];
+      let lastLabel = null;
+      entries.forEach((e) => {
+        const label = dateGroupLabel(e.ts);
+        if (label !== lastLabel) {
+          grouped.push({ kind: "header", label, key: "h-" + label + e.id });
+          lastLabel = label;
+        }
+        grouped.push({ kind: "entry", entry: e, key: e.id });
+      });
+
+      return (
+        <div className="min-h-screen" style={{ background: "#EFE6D3", color: "#232A4D" }}>
+          <div className="fixed left-0 top-0 bottom-0 w-3 stitch" style={{ background: "#5c2020", zIndex: 20 }} />
+
+          <div className="pl-3">
+            <div className="relative overflow-hidden" style={{ background: "linear-gradient(135deg,#7A2E2E,#5c2020)" }}>
+              <div className="pl-6 pr-16 py-6">
+                <p className="text-xs tracking-widest uppercase" style={{ color: "#D8B98C" }}>আস্ক মাহিন</p>
+                <h1 className="khata-display text-3xl font-bold" style={{ color: "#F3E9D2" }}>আমার খাতা</h1>
+                <p className="text-sm mt-1" style={{ color: "#E4CFAE" }}>{banglaDateLabel()}</p>
+              </div>
+              <div className="ribbon absolute top-0 right-6 w-8 h-16" style={{ background: "#B33A3A" }} />
+            </div>
+
+            <div className="grid grid-cols-3 gap-px mx-4 -mt-4 rounded-lg overflow-hidden shadow-md" style={{ background: "#D9CBAE" }}>
+              <div className="p-3 text-center" style={{ background: "#F7F1E4" }}>
+                <p className="text-xs" style={{ color: "#4A5170" }}>আজ বিক্রি</p>
+                <p className="khata-display text-lg font-bold" style={{ color: "#3D7A5C" }}>{formatTaka(saleTotal)}</p>
+              </div>
+              <div className="p-3 text-center" style={{ background: "#F7F1E4" }}>
+                <p className="text-xs" style={{ color: "#4A5170" }}>আজ খরচ</p>
+                <p className="khata-display text-lg font-bold" style={{ color: "#B33A3A" }}>{formatTaka(expenseTotal)}</p>
+              </div>
+              <div className="p-3 text-center" style={{ background: "#F7F1E4" }}>
+                <p className="text-xs" style={{ color: "#4A5170" }}>মোট বাকি</p>
+                <p className="khata-display text-lg font-bold" style={{ color: "#A8843C" }}>{formatTaka(totalDuesAll)}</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col items-center mt-8 mb-3 px-4">
+              <button onClick={startRecording} disabled={parsing || isRecording} className={`seal-btn ${isRecording ? "recording" : ""} w-24 h-24 rounded-full flex items-center justify-center`}>
+                <span style={{ fontSize: "34px" }}>🎙️</span>
+              </button>
+              <p className="text-sm mt-3" style={{ color: "#4A5170" }}>
+                {isRecording ? "শুনছি... বলো" : parsing ? "লিখে রাখছি..." : "চেপে বাংলায় বলো"}
+              </p>
+              {!micSupported && (
+                <p className="text-xs mt-1 text-center" style={{ color: "#B33A3A" }}>এই ব্রাউজারে ভয়েস কাজ নাও করতে পারে — নিচে লিখেও যোগ করা যায়</p>
+              )}
+            </div>
+
+            <div className="flex gap-2 px-4 mb-4">
+              <input
+                value={manualText}
+                onChange={(e) => setManualText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") handleAdd(manualText); }}
+                placeholder="যেমনঃ ৫০০ টাকা বিক্রি, রহিম ভাইয়ের কাছে ২০০ টাকা বাকি"
+                className="flex-1 rounded-lg px-3 py-2 text-sm border focus:outline-none"
+                style={{ background: "#F7F1E4", borderColor: "#D9CBAE", color: "#232A4D" }}
+              />
+              <button onClick={() => handleAdd(manualText)} disabled={parsing} className="rounded-lg px-4 flex items-center justify-center text-lg font-bold" style={{ background: "#7A2E2E", color: "#F3E9D2" }}>
+                +
+              </button>
+            </div>
+
+            <div className="px-4 mb-6">
+              <p className="text-xs mb-2" style={{ color: "#8A8368" }}>অথবা দ্রুত ম্যানুয়াল এন্ট্রি (সার্ভার ছাড়া, ১০০% নিশ্চিত):</p>
+              <div className="flex gap-2 flex-wrap mb-2">
+                {QUICK_TYPES.map((qt) => (
+                  <button
+                    key={qt.type}
+                    onClick={() => setQuickForm({ type: qt.type, amount: "", party: "" })}
+                    className="chip rounded-full px-3 py-1.5 text-xs font-medium"
+                    style={{
+                      background: quickForm && quickForm.type === qt.type ? typeColor(qt.type) : "#F7F1E4",
+                      color: quickForm && quickForm.type === qt.type ? "#F3E9D2" : typeColor(qt.type),
+                    }}
+                  >
+                    {qt.label}
+                  </button>
+                ))}
+              </div>
+              {quickForm && (
+                <div className="fade-in rounded-lg p-3 flex flex-col gap-2" style={{ background: "#F7F1E4", border: "1px solid #D9CBAE" }}>
+                  <input
+                    value={quickForm.amount}
+                    onChange={(e) => setQuickForm({ ...quickForm, amount: e.target.value.replace(/[^0-9]/g, "") })}
+                    placeholder="টাকার পরিমাণ"
+                    inputMode="numeric"
+                    className="rounded-md px-3 py-2 text-sm border focus:outline-none"
+                    style={{ background: "#FFFDF7", borderColor: "#D9CBAE" }}
+                  />
+                  <input
+                    value={quickForm.party}
+                    onChange={(e) => setQuickForm({ ...quickForm, party: e.target.value })}
+                    placeholder="নাম (না দিলেও চলবে)"
+                    className="rounded-md px-3 py-2 text-sm border focus:outline-none"
+                    style={{ background: "#FFFDF7", borderColor: "#D9CBAE" }}
+                  />
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => setQuickForm(null)} className="text-xs px-3 py-1.5 rounded-md" style={{ color: "#4A5170" }}>বাতিল</button>
+                    <button onClick={submitQuickForm} className="text-xs px-4 py-1.5 rounded-md font-medium" style={{ background: "#7A2E2E", color: "#F3E9D2" }}>যোগ করো</button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {toast && (
+              <div className="mx-4 mb-4 text-sm text-center py-2 rounded fade-in" style={{ background: toast.kind === "success" ? "#DCEEE2" : "#F3D9D9", color: toast.kind === "success" ? "#2F6B4F" : "#7A2E2E" }}>
+                {toast.msg}
+              </div>
+            )}
+
+            <div className="px-4 mb-2 flex items-center justify-between">
+              <h2 className="khata-display text-lg font-bold">হিসাবের খাতা</h2>
+              <button onClick={shareReport} className="text-xs px-2 py-1 rounded-md" style={{ color: "#7A2E2E" }}>📤 আজকের রিপোর্ট</button>
+            </div>
+
+            <div className="mx-4 mb-8 rounded-lg overflow-hidden shadow-sm" style={{ background: "#F7F1E4" }}>
+              {loaded && entries.length === 0 && (
+                <div className="text-center py-10 px-6 text-sm" style={{ color: "#4A5170" }}>খাতা এখনও ফাঁকা। মাইক চেপে বলো, বা উপরে লিখে প্রথম হিসাব যোগ করো।</div>
+              )}
+              <ul className="margin-rule ruled-bg">
+                {grouped.map((row) => {
+                  if (row.kind === "header") {
+                    return <li key={row.key} className="px-4 py-1.5 text-xs font-semibold" style={{ background: "#EAE0C8", color: "#7A2E2E" }}>{row.label}</li>;
+                  }
+                  const entry = row.entry;
+                  if (editDraft && editDraft.id === entry.id) {
+                    return (
+                      <li key={row.key} className="px-4 py-3 fade-in" style={{ background: "#F3E9D2" }}>
+                        <div className="flex gap-1 flex-wrap mb-2">
+                          {QUICK_TYPES.map((qt) => (
+                            <button key={qt.type} onClick={() => setEditDraft({ ...editDraft, type: qt.type })} className="chip rounded-full px-2 py-1 text-xs" style={{ background: editDraft.type === qt.type ? typeColor(qt.type) : "#FFFDF7", color: editDraft.type === qt.type ? "#F3E9D2" : typeColor(qt.type) }}>
+                              {qt.label}
+                            </button>
+                          ))}
+                        </div>
+                        <input value={editDraft.amount} onChange={(e) => setEditDraft({ ...editDraft, amount: e.target.value.replace(/[^0-9]/g, "") })} placeholder="টাকা" inputMode="numeric" className="w-full rounded-md px-2 py-1.5 text-sm border mb-2" style={{ background: "#FFFDF7", borderColor: "#D9CBAE" }} />
+                        <input value={editDraft.party} onChange={(e) => setEditDraft({ ...editDraft, party: e.target.value })} placeholder="নাম" className="w-full rounded-md px-2 py-1.5 text-sm border mb-2" style={{ background: "#FFFDF7", borderColor: "#D9CBAE" }} />
+                        <div className="flex justify-end gap-2">
+                          <button onClick={() => setEditDraft(null)} className="text-xs px-3 py-1.5" style={{ color: "#4A5170" }}>বাতিল</button>
+                          <button onClick={saveEdit} className="text-xs px-4 py-1.5 rounded-md font-medium" style={{ background: "#7A2E2E", color: "#F3E9D2" }}>সংরক্ষণ</button>
+                        </div>
+                      </li>
+                    );
+                  }
+                  return (
+                    <li key={row.key} className={`flex items-start justify-between px-4 fade-in ${flashId === entry.id ? "flash-row" : ""}`} style={{ minHeight: "44px", paddingTop: "6px", paddingBottom: "6px" }}>
+                      <button onClick={() => startEdit(entry)} className="flex items-start gap-2 overflow-hidden text-left flex-1">
+                        <span className="text-xs mt-1 shrink-0" style={{ color: "#8A8368", width: "72px" }}>{timeLabel(entry.ts)}</span>
+                        <span className="text-sm mt-1 truncate">
+                          {typeLabelBangla(entry.type)}
+                          {entry.party ? ` — ${entry.party}` : ""}
+                          {entry.note ? ` (${entry.note})` : ""}
+                        </span>
+                        <span className="mt-1.5 opacity-30 shrink-0 text-xs">✎</span>
+                      </button>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-sm font-semibold mt-1" style={{ color: typeColor(entry.type) }}>
+                          {entry.type === "expense" ? "-" : ""}{formatTaka(entry.amount)}
+                        </span>
+                        <button onClick={() => deleteEntry(entry.id)} className="opacity-40 hover:opacity-100 text-sm">×</button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+
+            {duesList.length > 0 && (
+              <div className="mx-4 mb-10">
+                <h2 className="khata-display text-lg font-bold mb-2">বাকির হিসাব</h2>
+                <div className="rounded-lg overflow-hidden shadow-sm" style={{ background: "#F7F1E4" }}>
+                  {duesList.map(([name, amt]) => (
+                    <div key={name} className="flex items-center justify-between px-4 py-2" style={{ borderBottom: "1px solid #EAE0C8" }}>
+                      <span className="text-sm">{name}</span>
+                      <span className="text-sm font-semibold" style={{ color: "#A8843C" }}>{formatTaka(amt)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <p className="text-center text-xs px-6 pb-8" style={{ color: "#8A8368" }}>
+              ডেটা এই ফোনের ব্রাউজারে (localStorage) সেভ থাকে। ভয়েস/AI পার্সিং কাজ করতে ব্যাকএন্ড লিংক লাগবে।
+            </p>
+          </div>
+
+          {reportModal && (
+            <div className="fixed inset-0 flex items-end justify-center fade-in" style={{ background: "rgba(35,42,77,0.55)", zIndex: 50 }} onClick={() => setReportModal(null)}>
+              <div className="w-full rounded-t-2xl p-4" style={{ background: "#F7F1E4", maxWidth: "480px" }} onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="khata-display text-lg font-bold">আজকের রিপোর্ট</h3>
+                  <button onClick={() => setReportModal(null)} style={{ color: "#4A5170" }}>×</button>
+                </div>
+                <p className="text-xs mb-2" style={{ color: "#8A8368" }}>নিচের বক্সে চেপে ধরে সব সিলেক্ট করো, তারপর কপি করে WhatsApp-এ পেস্ট করো</p>
+                <textarea ref={reportTextRef} readOnly value={reportModal} rows={8} className="w-full rounded-lg p-3 text-sm border mb-3" style={{ background: "#FFFDF7", borderColor: "#D9CBAE", color: "#232A4D" }} onFocus={(e) => e.target.select()} />
+                <button onClick={copyReportText} className="w-full rounded-lg py-2.5 text-sm font-medium" style={{ background: "#7A2E2E", color: "#F3E9D2" }}>কপি করো</button>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<App />);
+  </script>
+
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("sw.js").catch(() => {});
+      });
+    }
+  </script>
+</body>
+</html>

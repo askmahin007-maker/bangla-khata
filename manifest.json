@@ -1,0 +1,14 @@
+{
+  "name": "আমার খাতা",
+  "short_name": "খাতা",
+  "description": "বাংলা ভয়েস-খাতা — দোকানের বিক্রি, খরচ, বাকির হিসাব",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#EFE6D3",
+  "theme_color": "#7A2E2E",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "icon-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "icon-512.png", "type": "image/png", "sizes": "512x512" }
+  ]
+}
